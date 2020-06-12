@@ -49,15 +49,12 @@ def record_curl(): # Run a non-deterministic command at the root snapshot, then 
 
 def main():
 
-    # Make sure we're always saving a new recording
-    for f in [recording_name+"-rr-nondet.log", recording_name+"-rr-snp"]:
-        if path.isfile(f): remove(f)
+    if not (path.isfile(recording_name+"-rr-nondet.log") and path.isfile(recording_name+"-rr-snp")):
+        print("======== TAKE RECORDING ========")
+        panda.queue_async(record_curl)
+        panda.run()
+        print("======== END RECORDING ========")
     
-    print("======== TAKE RECORDING ========")
-    panda.queue_async(record_curl) # Take a recording
-    panda.run()
-    print("======== END RECORDING ========")
-
     print("======== RUN REPLAY ========")
     #panda.load_plugin('taint2')
     #panda.load_plugin('tainted_branch')
