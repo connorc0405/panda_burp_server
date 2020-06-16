@@ -2,9 +2,8 @@
 # Take a recording, then replay and analyze
 
 
-from os import remove, path
-from panda import Panda, blocking, ffi
-import subprocess
+from os import path
+from panda import Panda, ffi
 
 
 # Need to include at top-level for ppp decorator
@@ -28,41 +27,25 @@ ffi.cdef('void ppp_add_cb_on_branch2(on_branch2_t);') # Why don't we autogen thi
 # End hacky-CFFI codev
 
 
-@blocking
-def record_curl(): # Run a non-deterministic command at the root snapshot, then end .run()
-    panda.revert_sync('root')
-    print('Fixing guest network...')
-    panda.run_serial_cmd('/root/fix_network.sh')
-    print('Beginning recording...')
-    panda.run_monitor_cmd("begin_record {}".format(recording_name))
-    print('Running CURL from Docker')
-    subprocess.run(['curl', 'localhost:8080/cgi-bin/querystr.cgi?SECRE'])
-    panda.run_monitor_cmd("end_record")
-    panda.stop_run()
-
-
-#@panda.ppp("taint2", "on_branch2")
-#def tainted_branch(addr, size):
-#    #proc =
-#    print(f'BRANCH at addr {addr} was tainted in proc {proc}')
+@panda.ppp("taint2", "on_branch2")
+def tainted_branch(addr, size):
+    proc = 'ABC'
+    print(f'BRANCH at addr {addr} was tainted in proc {proc}')
 
 
 def main():
 
     if not (path.isfile(recording_name+"-rr-nondet.log") and path.isfile(recording_name+"-rr-snp")):
-        print("======== TAKE RECORDING ========")
-        panda.queue_async(record_curl)
-        panda.run()
-        print("======== END RECORDING ========")
-    
+        print('Record and/or replay file does not exist')
+
     print("======== RUN REPLAY ========")
-    #panda.load_plugin('taint2')
-    #panda.load_plugin('tainted_branch')
-    #panda.load_plugin('tainted_net', {'label_incoming_network': True})
+    panda.load_plugin('taint2')
+    panda.load_plugin('tainted_branch')
+    panda.load_plugin('tainted_net', {'label_incoming_network': True})
     panda.run_replay(recording_name) # Load and run the replay
     print("======== FINISH REPLAY ========")
 
-    #panda.end_analysis()
+    panda.end_analysis()
    
 if __name__ == '__main__':
     main()
