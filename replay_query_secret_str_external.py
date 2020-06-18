@@ -29,8 +29,14 @@ ffi.cdef('void ppp_add_cb_on_branch2(on_branch2_t);') # Why don't we autogen thi
 
 @panda.ppp("taint2", "on_branch2")
 def tainted_branch(addr, size):
-    proc = 'ABC'
-    print(f'BRANCH at addr {addr} was tainted in proc {proc}')
+    cpu = panda.get_cpu()
+    pc = panda.current_pc(cpu)
+    proc = panda.plugins['osi'].get_current_process(cpu)
+    name = ffi.string(proc.name)
+
+    if name == b'querystr.cgi':
+        print(f'BRANCH at addr {addr} was tainted in proc {name}')
+    # Get disassembled code, figure out what is being compared
 
 
 def main():
@@ -41,9 +47,14 @@ def main():
     print("======== RUN REPLAY ========")
     panda.load_plugin('taint2')
     panda.load_plugin('tainted_branch')
-    panda.load_plugin('tainted_net', {'label_incoming_network': True})
+    panda.load_plugin('tainted_net', {'label_incoming_network': True, 'ip_src':'10.0.2.2', 'packets':'7'})
+    panda.set_os_name("linux-64-ubuntu:4.15.0-72-generic")
+    panda.load_plugin("osi", {"disable-autoload": True})
+    panda.load_plugin("osi_linux", {"kconf_file": "/panda_resources/kernelinfo-noaslr-nokaslr.conf", "kconf_group": "ubuntu:4.15.0-72-generic-noaslr-nokaslr:64"})
     panda.run_replay(recording_name) # Load and run the replay
     print("======== FINISH REPLAY ========")
+
+
 
     panda.end_analysis()
    
