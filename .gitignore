@@ -1,0 +1,4 @@
+# Ignore record/replay files
+*-rr-snp
+*-rr-nondet.log
+
