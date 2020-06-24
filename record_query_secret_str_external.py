@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Take a recording, then replay and analyze
+# Take a recording
 
 
 from os import path
