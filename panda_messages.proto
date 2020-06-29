@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+message BurpMessage {
+  oneof msg {
+    Command command = 1;
+    BytesToTaint bytes_to_taint = 2;
+    ResponseTaintData response_taint_data = 3;
+  }
+}
+
+message Command {
+  string cmd = 1;
+}
+
+message BytesToTaint {
+  repeated ByteGroup byte_group = 1;
+}
+
+// Contiguous group of bytes to taint with 1 label
+message ByteGroup {
+  repeated uint32 offset = 1;
+}
+
+message ResponseTaintData {
+  uint32 temp = 1;  // placeholder
+}

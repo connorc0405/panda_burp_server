@@ -7,3 +7,7 @@
 
 # Python
 __pycache__/
+
+# Generated Protocol Buffer Source
+panda_messages_pb2.py
+
