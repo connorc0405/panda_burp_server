@@ -2,3 +2,8 @@
 *-rr-snp
 *-rr-nondet.log
 
+# VSCode
+.vscode/
+
+# Python
+__pycache__/
