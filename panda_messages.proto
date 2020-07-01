@@ -1,7 +1,7 @@
 syntax = "proto3";
 
 message BurpMessage {
-  oneof msg {
+  oneof type {
     Command command = 1;
     BytesToTaint bytes_to_taint = 2;
     ResponseTaintData response_taint_data = 3;
@@ -9,7 +9,7 @@ message BurpMessage {
 }
 
 message Command {
-  string cmd = 1;
+  string cmd_string = 1;
 }
 
 message BytesToTaint {
