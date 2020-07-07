@@ -1,26 +1,45 @@
 syntax = "proto3";
 
+option java_package = "com.ccumming.burp";
+
 message BurpMessage {
   oneof type {
     Command command = 1;
-    BytesToTaint bytes_to_taint = 2;
-    ResponseTaintData response_taint_data = 3;
+    Response response = 2;
   }
 }
 
 message Command {
-  string cmd_string = 1;
+  CommandType cmd_type = 1;
+  optional TaintBytes taint_bytes = 2;
 }
 
-message BytesToTaint {
-  repeated ByteGroup byte_group = 1;
+enum CommandType {
+  StartRecording = 0;
+  StopRecording = 1;
+  SetTaintBytes = 2;  // Command will include a TaintBytes.
+}
+
+message Response {
+  ResponseType resp_type = 1;
+  optional TaintResult taint_bytes = 2;
+}
+
+enum ResponseType {
+  RecordingStarted = 0;
+  RecordingStopped = 1;
+  ReturnTaintResult = 2;  // Command will include a TaintResult.
+}
+
+message TaintBytes {
+  repeated TaintByteGroup byte_group = 1;
 }
 
 // Contiguous group of bytes to taint with 1 label
-message ByteGroup {
+message TaintByteGroup {
   repeated uint32 offset = 1;
 }
 
-message ResponseTaintData {
+message TaintResult {
   uint32 temp = 1;  // placeholder
 }
