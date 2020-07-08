@@ -85,7 +85,7 @@ def receive_msg(sock):
     msg_len = int.from_bytes(sock.recv(4), 'big')
 
     received_data = bytearray()
-    while len(received_data) < msg_len - 4:
+    while len(received_data) < msg_len:
         new_data = sock.recv(4096)
         received_data.extend(new_data)
 
