@@ -23,7 +23,7 @@ enum CommandType {
 
 message Response {
   ResponseType resp_type = 1;
-  TaintResult taint_bytes = 2;
+  TaintResult taint_result = 2;
 }
 
 enum ResponseType {
