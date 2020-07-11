@@ -2,6 +2,7 @@
 # Present socket for Burp extension to connect to for control data.
 
 import socket
+import struct
 
 
 from panda import Panda, blocking
@@ -74,6 +75,24 @@ def execute_panda_end_record():
     print('Stopping recording...')
     print(panda.run_monitor_cmd('end_record'))
     panda.stop_run()
+
+
+def send_msg(msg, sock):
+    """
+    Send the message using the given socket.
+    """
+    msg_serialized = msg.SerializeToString()
+    pkt_len = len(msg_serialized)
+    pkt = struct.pack(f'!I{pkt_len}s', pkt_len, msg_serialized)
+
+    send_len = len(pkt)
+    sent_bytes_total = 0
+
+    while sent_bytes_total < send_len:
+        sent_bytes = sock.send(pkt[sent_bytes_total:])
+        if sent_bytes == 0:  # Other host closed/closing socket
+            raise Exception("Socket was closed")
+        sent_bytes_total += sent_bytes
 
 
 def receive_msg(sock):
