@@ -11,14 +11,14 @@ message BurpMessage {
 
 message Command {
   CommandType cmd_type = 1;
-  TaintBytes taint_bytes = 2;
+  string taint_bytes = 2;
 }
 
 enum CommandType {
   Unused = 0;  // Default value (0) isn't sent over the wire -> confusing for debugging.  Remove eventually
   StartRecording = 1;
   StopRecording = 2;
-  SetTaintBytes = 3;  // Command will include a TaintBytes.
+  SetTaintBytes = 3;  // Command will include a string of bytes to taint.
 }
 
 message Response {
@@ -31,15 +31,6 @@ enum ResponseType {
   RecordingStarted = 1;
   RecordingStopped = 2;
   ReturnTaintResult = 3;  // Command will include a TaintResult.
-}
-
-message TaintBytes {
-  repeated TaintByteGroup byte_group = 1;
-}
-
-// Contiguous group of bytes to taint with 1 label
-message TaintByteGroup {
-  repeated uint32 offset = 1;
 }
 
 message TaintResult {
