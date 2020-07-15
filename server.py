@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # Present socket for Burp extension to connect to for control data.
+# TODO cmdline args
 
 import socket
 import struct
-
 
 from panda import Panda, blocking
 import panda_messages_pb2
@@ -13,67 +13,60 @@ panda = Panda(arch='x86_64', mem='1G', qcow='/panda_resources/bionic-work.qcow2'
 recording_name = 'testing_testing'
 
 
+@blocking
+def main():
+    panda_init_helpers()
+    run_server()
+
+
+@blocking
 def run_server():
+    """
+    Handles the lifecycle of the client's taint request.
+    Enforces ordering of requests based on simple, synchronous ordering of protobufs.
+    """
 
+    # Open client connection
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # TODO no reuse after testing finished?
     sock.bind(('0.0.0.0', 8081))
-    sock.listen()
-    conn, addr = sock.accept()
+    sock.listen(0)  # We don't need to queue connections with one user.
+    conn, _ = sock.accept()
 
-    first_msg = receive_msg(conn)
-    handle_incoming_msg(first_msg, panda)
+    # Wait for start_recording command
+    start_rec_msg = receive_msg(conn)
+    assert start_rec_msg.command.cmd_type == panda_messages_pb2.StartRecording  # Exception here!
 
-    second_msg = receive_msg(conn)
-    handle_incoming_msg(second_msg, panda)
+    # Send recording_started response
+    start_rec_resp_msg = panda_messages_pb2.BurpMessage()
+    start_rec_resp_obj = panda_messages_pb2.Response()
+    start_rec_resp_obj.resp_type = panda_messages_pb2.RecordingStarted
+    start_rec_resp_msg.response.CopyFrom(start_rec_resp_obj)
+    panda.run_monitor_cmd('begin_record {}'.format(recording_name))
+    send_msg(start_rec_resp_msg, conn)
 
+    # HTTP happens here but we don't see it.
 
-def handle_incoming_msg(msg, panda):
-    """
-    React to an incoming message.
-    """
+    # Wait for stop_recording command
+    stop_rec_msg = receive_msg(conn)
+    assert stop_rec_msg.command.cmd_type == panda_messages_pb2.StopRecording  # Exception here!
 
-    msg_type = msg.WhichOneof('type')
+    # Send recording_stopped response
+    stop_rec_resp_msg = panda_messages_pb2.BurpMessage()
+    stop_rec_resp_obj = panda_messages_pb2.Response()
+    stop_rec_resp_obj.resp_type = panda_messages_pb2.RecordingStopped
+    stop_rec_resp_msg.response.CopyFrom(stop_rec_resp_obj)
+    panda.run_monitor_cmd('end_record')
+    send_msg(stop_rec_resp_msg, conn)
 
-    if msg_type == 'command':
-        handle_panda_command(msg.command, panda)
-    elif msg_type == 'bytes_to_taint':
-        pass
-    else:
-        print(f'Unimplemented BurpMessage type {msg_type}.  Ignoring.')
+    # Wait for taint_bytes
+    taint_bytes_msg = receive_msg(conn)
+    assert taint_bytes_msg.command.cmd_type == panda_messages_pb2.SetTaintBytes
+    # TODO run thru taint system
+    print(taint_bytes_msg.command.taint_bytes)
 
+    # TODO send taint_results
 
-def handle_panda_command(command_obj, panda):
-    """
-    Handle the incoming PANDA command.
-    """
-
-    if command_obj.cmd_string == 'begin_record':
-        panda.queue_async(execute_panda_begin_record)
-        panda.run()
-    elif command_obj.cmd_string == 'end_record':
-        panda.queue_async(execute_panda_end_record)
-        panda.run()
-
-
-@blocking
-def execute_panda_begin_record():
-    """
-    Begin PANDA recording.
-    """
-
-    print('Beginning recording...')
-    print(panda.run_monitor_cmd('begin_record {}'.format(recording_name)))
-    panda.stop_run()
-
-
-@blocking
-def execute_panda_end_record():
-    """
-    End PANDA recording.
-    """
-    print('Stopping recording...')
-    print(panda.run_monitor_cmd('end_record'))
     panda.stop_run()
 
 
@@ -118,10 +111,8 @@ def panda_init_helpers():
     panda.revert_sync('root')
     panda.run_serial_cmd('/root/fix_network.sh')
     print('Fixed guest network')
-    panda.stop_run()
 
 
 if __name__ == '__main__':
-    panda.queue_async(panda_init_helpers)
+    panda.queue_async(main)
     panda.run()
-    run_server()
