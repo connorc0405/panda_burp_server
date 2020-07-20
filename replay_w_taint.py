@@ -12,6 +12,7 @@ import ctypes
 panda = Panda(arch='x86_64', mem='1G', qcow='/panda_resources/bionic-work.qcow2', expect_prompt=rb'root@ubuntu:.*# ', extra_args='-display none -net user,hostfwd=tcp::8080-:80 -net nic')
 
 recording_name = 'testing_testing2'
+taint_selection = '0,1:2,3:4,5'
 
 
 # Hacky code to get on_branch2 PPP callback working in pypanda
@@ -42,11 +43,10 @@ def tainted_branch(addr, size):
     # Get disassembled code, figure out what is being compared
 
 
-taint_idx = 0 # Each request increments
 net_fds = set()
 
-panda.set_os_name("linux-64-ubuntu:4.15.0-72-generic")
 
+panda.set_os_name("linux-64-ubuntu:4.15.0-72-generic")
 # TODO: expose a port-specific filter
 # TODO accept vs accept4???
 @panda.ppp("syscalls2", "on_sys_accept4_return")
@@ -54,6 +54,10 @@ def on_sys_accept_return(cpu, pc, sockfd, addr, addrLen, junk):
     newfd = cpu.env_ptr.regs[R_EAX]
     print(f"Accept on {sockfd}, new FD is {newfd}")
     net_fds.add(newfd)
+
+
+taint_idx = 0 # Each request increments
+
 
 # TODO: we should hook calls to vfs_read instead of syscalls
 @panda.ppp("syscalls2", "on_sys_read_return")
@@ -66,18 +70,29 @@ def on_sys_read_return(cpu, pc, fd, buf, count):
     if fd in net_fds:
         bytes_written = cpu.env_ptr.regs[R_EAX]
         data = panda.virtual_memory_read(cpu, buf, bytes_written)
+        print(repr(data))
+        print([int(x) for x in data])
 
         if not b'GET' in data and not b'POST' in data:
             print(f"Not tainting buffer: {repr(data)}")
             return # Don't taint non HTTP. Might have issues if requested get buffered TODO
 
-        # Label each tainted (physical) address
-        for taint_vaddr in range(buf, buf+bytes_written):
-            taint_paddr = panda.virt_to_phys(cpu, taint_vaddr) # Physical address
-            panda.taint_label_ram(taint_paddr, taint_idx)
-
-        # Increment label for next request
-        taint_idx += 1
+        # Label tainted (physical) addresses
+        taint_groups = taint_selection.split(',')
+        for group in taint_groups:  # While we are parsing the taint string
+            if len(group) == 1:  # One byte
+                taint_offset = int(group)
+                taint_paddr = panda.virt_to_phys(cpu, buf + taint_offset) # Physical address
+                panda.taint_label_ram(taint_paddr, taint_idx)
+                print(f"tainted byte {data[taint_offset]} with index {taint_idx}")
+            else:  # Range of bytes (i.e. 0:5)
+                assert type(group) == str
+                assert group[1] == ':'
+                for taint_offset in range(int(group[0]), int(group[2])+1):
+                    taint_paddr = panda.virt_to_phys(cpu, buf + taint_offset) # Physical address
+                    panda.taint_label_ram(taint_paddr, taint_idx)
+                    print(f"tainted byte {data[taint_offset]} with index {taint_idx}")
+            taint_idx += 1
     else:
         return # We shouldn't need this because our FD will be created (accept() syscall will be called) during the replay
         # SUPER HACKY - but syscalls aren't finidng the accept
@@ -95,6 +110,7 @@ def on_sys_read_return(cpu, pc, fd, buf, count):
 
             # Increment label for next request
             taint_idx += 1
+
 
 @panda.ppp("syscalls2", "on_sys_close_enter")
 def on_sys_close_enter(cpu, pc, fd):
