@@ -3,16 +3,15 @@
 
 
 from os import path
+import sys
+
+
 from panda import Panda, ffi
 from panda.x86.helper import *
-import ctypes
 
 
 # Need to include at top-level for ppp decorator
 panda = Panda(arch='x86_64', mem='1G', qcow='/panda_resources/bionic-work.qcow2', expect_prompt=rb'root@ubuntu:.*# ', extra_args='-display none -net user,hostfwd=tcp::8080-:80 -net nic')
-
-recording_name = 'testing_testing2'
-taint_selection = '0,1:2,3:4,5'
 
 
 # Hacky code to get on_branch2 PPP callback working in pypanda
@@ -45,7 +44,6 @@ def tainted_branch(addr, size):
 
 net_fds = set()
 
-
 panda.set_os_name("linux-64-ubuntu:4.15.0-72-generic")
 # TODO: expose a port-specific filter
 # TODO accept vs accept4???
@@ -56,8 +54,7 @@ def on_sys_accept_return(cpu, pc, sockfd, addr, addrLen, junk):
     net_fds.add(newfd)
 
 
-taint_idx = 0 # Each request increments
-
+taint_selection = None
 
 # TODO: we should hook calls to vfs_read instead of syscalls
 @panda.ppp("syscalls2", "on_sys_read_return")
@@ -65,7 +62,7 @@ def on_sys_read_return(cpu, pc, fd, buf, count):
     # XXX: taint labels are applied in main_loop_wait so this might be completley
     # broken depending on when that runs (hopefully at the return?)
     # This needs testing. See taint_mixins.py:37
-    global taint_idx
+    taint_idx = 0
 
     if fd in net_fds:
         bytes_written = cpu.env_ptr.regs[R_EAX]
@@ -117,7 +114,12 @@ def on_sys_close_enter(cpu, pc, fd):
     if fd in net_fds:
         net_fds.remove(fd)
 
+
 def main():
+
+    recording_name = sys.argv[1]
+    global taint_selection
+    taint_selection = sys.argv[2]
 
     if not (path.isfile(recording_name+"-rr-nondet.log") and path.isfile(recording_name+"-rr-snp")):
         print('Record and/or replay file does not exist')
@@ -138,6 +140,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-
-# TODO capture HTTP from socket read and apply taint that was chosen in BURP.
