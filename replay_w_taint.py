@@ -29,6 +29,24 @@ ffi.cdef('typedef void (*on_branch2_t) (FakeAddr, uint64_t);', override=True) # 
 ffi.cdef('void ppp_add_cb_on_branch2(on_branch2_t);') # Why don't we autogen this? Are we not translating the macros into fn defs?
 # End hacky-CFFI codev
 
+ffi.cdef("""
+        struct sockaddr {
+            unsigned short sa_family;	/* address family, AF_xxx	*/
+            char sa_data[14];	/* 14 bytes of protocol address	*/
+        };
+
+        struct in_addr {
+	        uint32_t s_addr;
+        };
+
+        struct sockaddr_in {
+            unsigned short sin_family; /* address family: AF_INET */
+            uint16_t sin_port;   /* port in network byte order */
+            struct in_addr sin_addr;   /* internet address */
+            unsigned char __pad[8];  // 16 - sizeof(short int) - sizeof(unsigned short int) - sizeof(struct in_addr)
+        };
+""")
+
 
 @panda.ppp("taint2", "on_branch2")
 def tainted_branch(addr, size):
@@ -46,12 +64,19 @@ net_fds = set()
 
 panda.set_os_name("linux-64-ubuntu:4.15.0-72-generic")
 # TODO: expose a port-specific filter
-# TODO accept vs accept4???
 @panda.ppp("syscalls2", "on_sys_accept4_return")
-def on_sys_accept_return(cpu, pc, sockfd, addr, addrLen, junk):
+def on_sys_accept4_return(cpu, pc, sockfd, addr, addr_len, flags):
     newfd = cpu.env_ptr.regs[R_EAX]
     print(f"Accept on {sockfd}, new FD is {newfd}")
     net_fds.add(newfd)
+    # Read from addr
+    # sockaddr_size = int.from_bytes(panda.virtual_memory_read(cpu, addr_len, ffi.sizeof('void*')), 'little')
+    # sockaddr_bytes = panda.virtual_memory_read(cpu, addr, sockaddr_size)
+    sockaddr_bytes = panda.virtual_memory_read(cpu, addr, 10) # In case for some reason sa_family/in_family isn't the first byte
+    for byte in sockaddr_bytes:
+        print(byte)  # Looking for AF_INET (x02) but it isn't there  https://elixir.bootlin.com/linux/v4.14/source/include/linux/socket.h#L164
+    # sockaddr = ffi.cast("struct sockaddr", sockaddr_bytes)
+    print(sockaddr + "-------------------------------------------------------------")
 
 
 taint_selection = None
@@ -75,7 +100,7 @@ def on_sys_read_return(cpu, pc, fd, buf, count):
             return # Don't taint non HTTP. Might have issues if requested get buffered TODO
 
         # Label tainted (physical) addresses
-        taint_groups = taint_selection.split(',')
+        taint_groups = taint_selection.split(',')  # What if just 1 byte/group?
         for group in taint_groups:  # While we are parsing the taint string
             if len(group) == 1:  # One byte
                 taint_offset = int(group)
