@@ -2,6 +2,7 @@
 # Present socket for Burp extension to connect to for control data.
 # TODO cmdline args
 
+
 import socket
 import struct
 
@@ -10,7 +11,7 @@ import panda_messages_pb2
 
 
 panda = Panda(arch='x86_64', mem='1G', qcow='/panda_resources/bionic-work.qcow2', expect_prompt=rb'root@ubuntu:.*# ', extra_args='-display none -net user,hostfwd=tcp::8080-:80 -net nic')
-recording_name = 'testing_testing'
+recording_name = 'testing_testing2'
 
 
 @blocking
@@ -62,10 +63,20 @@ def run_server():
     # Wait for taint_bytes
     taint_bytes_msg = receive_msg(conn)
     assert taint_bytes_msg.command.cmd_type == panda_messages_pb2.SetTaintBytes
-    # TODO run thru taint system
     print(taint_bytes_msg.command.taint_bytes)
 
-    # TODO send taint_results
+    # TODO run subprocess to get taint result.  can we run the subprocess while panda is still running in this process (and working on the qcow?)
+
+
+    # Send taint_results
+    taint_result_resp_msg = panda_messages_pb2.BurpMessage()
+    taint_result_resp_obj = panda_messages_pb2.Response()
+    taint_result_resp_obj.resp_type = panda_messages_pb2.ReturnTaintResult
+    taint_result_obj = panda_messages_pb2.TaintResult()
+    taint_result_obj.temp = 123  # TODO calculate real result
+    taint_result_resp_obj.taint_result.CopyFrom(taint_result_obj)
+    taint_result_resp_msg.response.CopyFrom(taint_result_resp_obj)
+    send_msg(taint_result_resp_msg, conn)
 
     panda.stop_run()
 
