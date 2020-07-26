@@ -42,12 +42,13 @@ ffi.cdef("""
         struct sockaddr_in {
             unsigned short sin_family; /* address family: AF_INET */
             uint16_t sin_port;   /* port in network byte order */
-            struct in_addr sin_addr;   /* internet address */
+            uint32_t sin_addr;   /* internet address */
             unsigned char __pad[8];  // 16 - sizeof(short int) - sizeof(unsigned short int) - sizeof(struct in_addr)
         };
 """)
 
-
+# TODO without this, PANDA[osi_linux]:E:osi_linux.cpp(init_per_cpu_offsets)> Unable to update value of ki.task.per_cpu_offset_0_addr.
+# python3: /panda/panda/plugins/osi_linux/osi_linux.cpp:609: void init_per_cpu_offsets(CPUState*): Assertion `false' failed.
 @panda.ppp("taint2", "on_branch2")
 def tainted_branch(addr, size):
     cpu = panda.get_cpu()
@@ -63,20 +64,30 @@ def tainted_branch(addr, size):
 net_fds = set()
 
 panda.set_os_name("linux-64-ubuntu:4.15.0-72-generic")
-# TODO: expose a port-specific filter
+# TODO: expose a filter (source port, ip, dest port)??
 @panda.ppp("syscalls2", "on_sys_accept4_return")
 def on_sys_accept4_return(cpu, pc, sockfd, addr, addr_len, flags):
     newfd = cpu.env_ptr.regs[R_EAX]
-    print(f"Accept on {sockfd}, new FD is {newfd}")
-    net_fds.add(newfd)
-    # Read from addr
-    # sockaddr_size = int.from_bytes(panda.virtual_memory_read(cpu, addr_len, ffi.sizeof('void*')), 'little')
-    # sockaddr_bytes = panda.virtual_memory_read(cpu, addr, sockaddr_size)
-    sockaddr_bytes = panda.virtual_memory_read(cpu, addr, 10) # In case for some reason sa_family/in_family isn't the first byte
-    for byte in sockaddr_bytes:
-        print(byte)  # Looking for AF_INET (x02) but it isn't there  https://elixir.bootlin.com/linux/v4.14/source/include/linux/socket.h#L164
-    # sockaddr = ffi.cast("struct sockaddr", sockaddr_bytes)
-    print(sockaddr + "-------------------------------------------------------------")
+    proc = panda.plugins['osi'].get_current_process(cpu)
+    proc_name = ffi.string(proc.name)
+    
+    net_fds.add((proc_name, newfd))  # Each process has its own fd space.
+    
+    # protocol_bytes = panda.virtual_memory_read(cpu, addr, 2)
+    # if int.from_bytes(protocol_bytes, 'little') in [2, 10]:  # Looking for AF_INET(6)
+        # sockaddr_bytes = panda.virtual_memory_read(cpu, addr, ffi.sizeof('struct sockaddr_in'))
+        # print(f"Sin_port: {int.from_bytes(sockaddr_bytes[2:4], 'big')}")
+        # print(f"Sin_addr: {[int(sockaddr_bytes[x]) for x in range(4,8)]}")
+        # print(f"Size of sockaddr_in: {ffi.sizeof('struct sockaddr_in')}")
+        # print(f"How many bytes we have: {len(sockaddr_bytes)}")
+
+        # s_struct = ffi.new("struct sockaddr_in *")
+        # s_buffer = ffi.buffer(s_struct)
+        # s_buffer[:] = sockaddr_bytes
+        # print(s_struct.sin_family)
+        # print(s_struct.sin_port)
+        # print(s_struct.sin_addr)
+        # sockaddr = ffi.cast("struct sockaddr_in", sockaddr_bytes)
 
 
 taint_selection = None
@@ -89,15 +100,16 @@ def on_sys_read_return(cpu, pc, fd, buf, count):
     # This needs testing. See taint_mixins.py:37
     taint_idx = 0
 
-    if fd in net_fds:
+    proc = panda.plugins['osi'].get_current_process(cpu)
+    proc_name = ffi.string(proc.name)
+
+    if (proc_name, fd) in net_fds:
         bytes_written = cpu.env_ptr.regs[R_EAX]
         data = panda.virtual_memory_read(cpu, buf, bytes_written)
-        print(repr(data))
-        print([int(x) for x in data])
 
-        if not b'GET' in data and not b'POST' in data:
+        if not b'HTTP/' in data in data:
             print(f"Not tainting buffer: {repr(data)}")
-            return # Don't taint non HTTP. Might have issues if requested get buffered TODO
+            return # Don't taint non HTTP.  Issues if requests get buffered TODO
 
         # Label tainted (physical) addresses
         taint_groups = taint_selection.split(',')  # What if just 1 byte/group?
@@ -115,29 +127,14 @@ def on_sys_read_return(cpu, pc, fd, buf, count):
                     panda.taint_label_ram(taint_paddr, taint_idx)
                     print(f"tainted byte {data[taint_offset]} with index {taint_idx}")
             taint_idx += 1
-    else:
-        return # We shouldn't need this because our FD will be created (accept() syscall will be called) during the replay
-        # SUPER HACKY - but syscalls aren't finidng the accept
-        bytes_written = cpu.env_ptr.regs[R_EAX]
-        data = panda.virtual_memory_read(cpu, buf, bytes_written)
-
-        if b'GET' in data or b'POST' in data:
-            print(f"Tainting {bytes_written}-byte buffer from fd {fd} with label {taint_idx}",
-                    repr(data)[:30], "...")
-
-            # Label each tainted (physical) address
-            for taint_vaddr in range(buf, buf+bytes_written):
-                taint_paddr = panda.virt_to_phys(cpu, taint_vaddr) # Physical address
-                panda.taint_label_ram(taint_paddr, taint_idx)
-
-            # Increment label for next request
-            taint_idx += 1
 
 
 @panda.ppp("syscalls2", "on_sys_close_enter")
 def on_sys_close_enter(cpu, pc, fd):
-    if fd in net_fds:
-        net_fds.remove(fd)
+    proc = panda.plugins['osi'].get_current_process(cpu)
+    proc_name = ffi.string(proc.name)
+    if (proc_name, fd) in net_fds:
+        net_fds.remove((proc_name, fd))
 
 
 def main():
