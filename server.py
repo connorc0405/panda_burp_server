@@ -119,7 +119,7 @@ def receive_msg(sock):
 
 @blocking
 def panda_init_helpers():
-    panda.revert_sync('root')
+    panda.revert_sync('ipv4')
     panda.run_serial_cmd('/root/fix_network.sh')
     print('Fixed guest network')
 
