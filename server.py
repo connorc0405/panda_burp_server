@@ -5,6 +5,8 @@
 
 import socket
 import struct
+import subprocess
+
 
 from panda import Panda, blocking
 import panda_messages_pb2
@@ -12,16 +14,18 @@ import panda_messages_pb2
 
 panda = Panda(arch='x86_64', mem='1G', qcow='/panda_resources/bionic-work.qcow2', expect_prompt=rb'root@ubuntu:.*# ', extra_args='-display none -net user,hostfwd=tcp::8080-:80 -net nic')
 recording_name = 'testing_testing2'
+conn = None
 
 
-@blocking
 def main():
-    panda_init_helpers()
-    run_server()
+    panda.queue_async(panda_init_helpers)
+    panda.queue_async(run_first_part_server)
+    panda.run()
+    run_second_part_server()
 
 
 @blocking
-def run_server():
+def run_first_part_server():
     """
     Handles the lifecycle of the client's taint request.
     Enforces ordering of requests based on simple, synchronous ordering of protobufs.
@@ -32,6 +36,7 @@ def run_server():
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # TODO no reuse after testing finished?
     sock.bind(('0.0.0.0', 8081))
     sock.listen(0)  # We don't need to queue connections with one user.
+    global conn
     conn, _ = sock.accept()
 
     # Wait for start_recording command
@@ -60,13 +65,18 @@ def run_server():
     panda.run_monitor_cmd('end_record')
     send_msg(stop_rec_resp_msg, conn)
 
+    panda.stop_run()
+
+
+def run_second_part_server():
+
     # Wait for taint_bytes
     taint_bytes_msg = receive_msg(conn)
     assert taint_bytes_msg.command.cmd_type == panda_messages_pb2.SetTaintBytes
-    print(taint_bytes_msg.command.taint_bytes)
 
-    # TODO run subprocess to get taint result.  can we run the subprocess while panda is still running in this process (and working on the qcow?)
-
+    panda.panda_finish()  # Release resources so subprocess can open fully
+    subprocess.run(["python3", "replay_w_taint.py", recording_name, taint_bytes_msg.command.taint_bytes])
+    # TODO how to retrieve the taint result?
 
     # Send taint_results
     taint_result_resp_msg = panda_messages_pb2.BurpMessage()
@@ -77,8 +87,6 @@ def run_server():
     taint_result_resp_obj.taint_result.CopyFrom(taint_result_obj)
     taint_result_resp_msg.response.CopyFrom(taint_result_resp_obj)
     send_msg(taint_result_resp_msg, conn)
-
-    panda.stop_run()
 
 
 def send_msg(msg, sock):
@@ -125,5 +133,4 @@ def panda_init_helpers():
 
 
 if __name__ == '__main__':
-    panda.queue_async(main)
-    panda.run()
+    main()
