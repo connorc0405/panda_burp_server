@@ -119,6 +119,7 @@ def on_sys_read_return(cpu, pc, fd, buf, count):
                 taint_paddr = panda.virt_to_phys(cpu, buf + taint_offset) # Physical address
                 panda.taint_label_ram(taint_paddr, taint_idx)
                 print(f"tainted byte {data[taint_offset]} with index {taint_idx}")
+                taint_idx += 1
             else:  # Range of bytes (i.e. 0:5)
                 assert type(group) == str
                 assert group[1] == ':'
@@ -126,7 +127,7 @@ def on_sys_read_return(cpu, pc, fd, buf, count):
                     taint_paddr = panda.virt_to_phys(cpu, buf + taint_offset) # Physical address
                     panda.taint_label_ram(taint_paddr, taint_idx)
                     print(f"tainted byte {data[taint_offset]} with index {taint_idx}")
-            taint_idx += 1
+                    taint_idx += 1
 
 
 @panda.ppp("syscalls2", "on_sys_close_enter")
