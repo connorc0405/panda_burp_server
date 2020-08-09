@@ -114,7 +114,7 @@ def on_sys_read_return(cpu, pc, fd, buf, count):
         # Label tainted (physical) addresses
         taint_groups = taint_selection.split(',')  # What if just 1 byte/group?
         for group in taint_groups:  # While we are parsing the taint string
-            if len(group) == 1:  # One byte
+            if ':' not in group:  # One byte
                 taint_offset = int(group)
                 taint_paddr = panda.virt_to_phys(cpu, buf + taint_offset) # Physical address
                 panda.taint_label_ram(taint_paddr, taint_idx)
@@ -122,8 +122,8 @@ def on_sys_read_return(cpu, pc, fd, buf, count):
                 taint_idx += 1
             else:  # Range of bytes (i.e. 0:5)
                 assert type(group) == str
-                assert group[1] == ':'
-                for taint_offset in range(int(group[0]), int(group[2])+1):
+                sep_idx = group.find(':')
+                for taint_offset in range(int(group[:sep_idx]), int(group[sep_idx+1:])+1):
                     taint_paddr = panda.virt_to_phys(cpu, buf + taint_offset) # Physical address
                     panda.taint_label_ram(taint_paddr, taint_idx)
                     print(f"tainted byte {data[taint_offset]} with index {taint_idx}")
